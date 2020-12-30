@@ -1,0 +1,3 @@
+<launch>
+	<node name="drive" pkg="birk_drive" type="drive" launch-prefix="sudo"/>
+</launch>
