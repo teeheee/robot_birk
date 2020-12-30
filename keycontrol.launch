@@ -1,0 +1,5 @@
+<launch>
+  <node pkg="key_teleop" type="key_teleop" name="scripts/key_teleop.py" output="screen">
+    <remap from="key_vel" to="twist"/>
+  </node>
+</launch>
