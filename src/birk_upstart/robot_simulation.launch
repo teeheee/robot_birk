@@ -1,0 +1,8 @@
+
+<launch>
+
+  <include file="$(find birk_gazebo)/launch/gazebo_full.launch" />
+  <include file="$(find birk_upstart)/mapping.launch" />
+  <include file="$(find birk_control)/control.launch" /> 
+
+</launch>
