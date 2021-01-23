@@ -1,3 +1,7 @@
 <launch>
 	<node name="drive" pkg="birk_drive" type="drive" launch-prefix="sudo"/>
+	<node pkg="rosserial_python" type="serial_node.py" name="rosserial">
+		<param name="port" value="/dev/ttyS0" />
+		<param name="baud" value="57600" />
+	</node>
 </launch>
