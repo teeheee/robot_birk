@@ -8,8 +8,10 @@ project(birk_drive)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
-  rospy
+  controller_manager
+  roscpp
   std_msgs
+  std_srvs
   tf
 )
 
@@ -20,7 +22,7 @@ find_package(catkin REQUIRED COMPONENTS
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
 ## See http://ros.org/doc/api/catkin/html/user_guide/setup_dot_py.html
-catkin_python_setup()
+# catkin_python_setup()
 
 ################################################
 ## Declare ROS messages, services and actions ##
@@ -103,11 +105,12 @@ catkin_python_setup()
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES birk_drive
-#  CATKIN_DEPENDS rospy std_msgs tf
+  INCLUDE_DIRS include
+#  LIBRARIES ros_control_example
+  CATKIN_DEPENDS controller_manager roscpp rospy std_msgs std_srvs
 #  DEPENDS system_lib
 )
+
 
 ###########
 ## Build ##
@@ -116,7 +119,7 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-# include
+ include
   ${catkin_INCLUDE_DIRS}
 )
 
@@ -145,10 +148,9 @@ include_directories(
 ## same as for the library above
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
+add_executable(joint_hardware_interface src/robot_hardware_interface_node.cpp)
 ## Specify libraries to link a library or executable target against
-# target_link_libraries(${PROJECT_NAME}_node
-#   ${catkin_LIBRARIES}
-# )
+target_link_libraries(joint_hardware_interface  ${catkin_LIBRARIES})
 
 #############
 ## Install ##
