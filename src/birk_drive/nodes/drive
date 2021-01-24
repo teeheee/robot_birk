@@ -2,13 +2,121 @@
 
 import rospy
 import roslib
+import time
 from std_msgs.msg import Float32, Int32
 from geometry_msgs.msg import Twist
 from dual_mc33926_rpi import motors, MAX_SPEED
+from simple_pid import PID
+
+
+class MotorEncoder():
+    def __init__(self, enc_topic_name, velo_topic_name, pos_topic_name):
+        rospy.Subscriber(enc_topic_name, Int32, self.steps_callback)
+        self.velo_pub = rospy.Publisher(velo_topic_name, Float32, queue_size=10)
+        self.pos_pub = rospy.Publisher(pos_topic_name, Float32, queue_size=10)
+        self.direction = "forward"
+        self.rad_per_step = 3.1415*2/140
+
+        self.absolute_steps = 0
+        self.time_stamp = 0
+        self.last_absolute_steps = 0
+        self.last_time_stamp = 0
+
+        self.position = 0
+        self.velocity = 0
+
+        self.update_callback = None
+
+    def set_onupdate_callback(self, update_callback):
+        self.update_callback = update_callback
+
+    def get_timestamp(self):
+        return round(time.time() * 1000)
+
+    def update_velocity(self):
+        dt = (self.time_stamp - self.last_time_stamp)/1000.0
+        if self.direction == "forward":
+            tmp = (self.absolute_steps - self.last_absolute_steps)
+        elif self.direction == "backward":
+            tmp = -(self.absolute_steps - self.last_absolute_steps)
+        else:
+            raise "set_direction wrong direction %s"%self.direction
+        if dt == 0:
+            raise "timestamp is zero"
+
+        self.velocity = self.rad_per_step * tmp / dt
+        self.velo_pub.publish(self.velocity)
+
+    def update_position(self):
+        self.pos_pub.publish(self.position)
+
+    def steps_callback(self, msg):
+        try:
+            self.absolute_steps = msg.data
+            self.time_stamp = self.get_timestamp()
+            self.update_velocity()
+            self.update_position()
+
+            self.last_time_stamp = self.time_stamp
+            self.last_absolute_steps  = self.absolute_steps
+            if self.update_callback is not None:
+                self.update_callback()
+        except Exception as e:
+            print(e)
+
+    def set_direction(self, direction):
+        if direction in ["forward", "backward"]:
+            if self.velocity == 0:
+                self.direction = direction
+                self.steps_offset_since_last_direction_change = self.absolute_steps
+                self.last_relative_steps = 0
+            else:
+                raise "cannot change direction with velocity=%f != 0"%self.velocity
+        else:
+            raise "set_direction wrong direction %s"%direction
+
+    def get_position(self):
+        return self.position
+
+    def get_velocitiy(self):
+        return self.velocity
+
+class MotorController:
+    def __init__(self, encoder, motor, name):
+        self.encoder_name = name
+        self.pid = PID(0, 5, 0, setpoint=0)
+        self.motor = motor
+        self.motor.enable()
+        self.motor.setSpeed(0)
+        self.encoder = encoder
+        self.max_pwm = 200
+        self.encoder.set_onupdate_callback(self.on_update)
+        rospy.Subscriber('motor/velocity/'+name, Float32, self.set_velocity_callback)
+        
+
+    def on_update(self):
+        print("name: %s"%self.encoder_name)
+        ist_velo = self.encoder.get_velocitiy()
+        print("soll_velo: %s"% self.pid.setpoint)
+        print("ist_velo: %s"% ist_velo)
+        pwm_value = -int(6*self.pid.setpoint + self.pid(ist_velo))
+        print("pwm_value: %s"%pwm_value)
+        if pwm_value > self.max_pwm:
+            pwm_value = self.max_pwm
+        if pwm_value < -self.max_pwm:
+            pwm_value = -self.max_pwm
+        self.motor.setSpeed(pwm_value)
+
+    def set_velocity(self, velo):
+        self.pid.setpoint = velo
+
+    def set_velocity_callback(self, msg):
+        self.set_velocity(msg.data)
+    
 
 #############################################################
 #############################################################
-class TwistToMotors():
+class DifferentialDrive():
 #############################################################
 #############################################################
 
@@ -21,23 +129,20 @@ class TwistToMotors():
 
         self.w = rospy.get_param("~base_width", 0.2)
 
-        rospy.Subscriber('encoder/setps_left', Int32, self.steps_left_callback)
-        rospy.Subscriber('encoder/setps_right', Int32, self.steps_right_callback)
+        self.left_encoder = MotorEncoder('encoder/setps_left','encoder/velo_left','encoder/pos_left')
+        self.right_encoder = MotorEncoder('encoder/setps_right','encoder/velo_right','encoder/pos_right')
+
         rospy.Subscriber('cmd_vel', Twist, self.twistCallback)
-
-
-        print("running")
 
         self.rate = rospy.get_param("~rate", 50)
         self.timeout_ticks = rospy.get_param("~timeout_ticks", 2)
         self.left = 0
         self.right = 0
-        
-        motors.motor1.enable()
-        motors.motor2.enable()
 
-        motors.motor1.setSpeed(0)
-        motors.motor2.setSpeed(0)
+        self.left_motor = MotorController(self.left_encoder, motors.motor2, "left")
+        self.right_motor = MotorController(self.right_encoder, motors.motor1, "right")
+
+        self.right_motor.set_velocity(44)
 
     #############################################################
     def spin(self):
@@ -73,8 +178,8 @@ class TwistToMotors():
         self.left = int(-MAX_SPEED*self.left)
         self.right = int(MAX_SPEED*self.right)
 
-        motors.motor1.setSpeed(self.left)
-        motors.motor2.setSpeed(self.right)
+        self.left_motor.set_velocity(self.left)
+        self.right_motor.set_velocity(self.right)
 
         self.ticks_since_target += 1
 
@@ -86,17 +191,12 @@ class TwistToMotors():
         self.dx = msg.linear.x
         self.dr = msg.angular.z
 
-    def steps_left_callback(self, msg):
-        print("left: %s"%msg.data)
-
-    def steps_right_callback(self, msg):
-        print("right: %s"%msg.data)
 
 #############################################################
 #############################################################
 def main():
     try:
-        twistToMotors = TwistToMotors()
+        twistToMotors = DifferentialDrive()
         twistToMotors.spin()
     except rospy.ROSInterruptException:
         motors.motor1.setSpeed(0)
