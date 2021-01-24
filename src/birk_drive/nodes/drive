@@ -2,7 +2,7 @@
 
 import rospy
 import roslib
-from std_msgs.msg import Float32
+from std_msgs.msg import Float32, Int32
 from geometry_msgs.msg import Twist
 from dual_mc33926_rpi import motors, MAX_SPEED
 
@@ -15,23 +15,26 @@ class TwistToMotors():
     #############################################################
     def __init__(self):
     #############################################################
-        rospy.init_node("twist_to_motors")
+        rospy.init_node("drive")
         nodename = rospy.get_name()
         rospy.loginfo("%s started" % nodename)
 
         self.w = rospy.get_param("~base_width", 0.2)
 
-#        self.pub_lmotor = rospy.Publisher('lwheel_vtarget', Float32, queue_size=10)
-#        self.pub_rmotor = rospy.Publisher('rwheel_vtarget', Float32, queue_size=10)
+        rospy.Subscriber('encoder/setps_left', Int32, self.steps_left_callback)
+        rospy.Subscriber('encoder/setps_right', Int32, self.steps_right_callback)
         rospy.Subscriber('cmd_vel', Twist, self.twistCallback)
+
+
+        print("running")
 
         self.rate = rospy.get_param("~rate", 50)
         self.timeout_ticks = rospy.get_param("~timeout_ticks", 2)
         self.left = 0
         self.right = 0
         
-	motors.motor1.enable()
-	motors.motor2.enable()
+        motors.motor1.enable()
+        motors.motor2.enable()
 
         motors.motor1.setSpeed(0)
         motors.motor2.setSpeed(0)
@@ -57,9 +60,6 @@ class TwistToMotors():
     def spinOnce(self):
     #############################################################
 
-        # dx = (l + r) / 2
-        # dr = (r - l) / w
-
         self.right = 1.0 * self.dx + self.dr * self.w * 2
         self.left = 1.0 * self.dx - self.dr * self.w * 2
 
@@ -70,28 +70,27 @@ class TwistToMotors():
                self.left *= scale
                self.right *= scale
 
-#	rospy.loginfo("publishing: (%d, %d)", self.left, self.right)
-
-#        self.pub_lmotor.publish(self.left)
-#        self.pub_rmotor.publish(self.right)
         self.left = int(-MAX_SPEED*self.left)
         self.right = int(MAX_SPEED*self.right)
 
-	motors.motor1.setSpeed(self.left)
-	motors.motor2.setSpeed(self.right)
+        motors.motor1.setSpeed(self.left)
+        motors.motor2.setSpeed(self.right)
 
         self.ticks_since_target += 1
 
     #############################################################
     def twistCallback(self,msg):
     #############################################################
-#        rospy.loginfo("-D- twistCallback: %s" % str(msg))
 
         self.ticks_since_target = 0
         self.dx = msg.linear.x
         self.dr = msg.angular.z
 
+    def steps_left_callback(self, msg):
+        print("left: %s"%msg.data)
 
+    def steps_right_callback(self, msg):
+        print("right: %s"%msg.data)
 
 #############################################################
 #############################################################
