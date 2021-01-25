@@ -21,7 +21,8 @@ class MotorEncoder():
         self.time_stamp = 0
         self.last_absolute_steps = 0
         self.last_time_stamp = 0
-
+        self.abs_offset = 0
+        self.pos_offset = 0
         self.position = 0
         self.velocity = 0
 
@@ -48,6 +49,12 @@ class MotorEncoder():
         self.velo_pub.publish(self.velocity)
 
     def update_position(self):
+        if self.direction == "forward":
+            self.position = self.pos_offset + (self.absolute_steps - self.abs_offset)
+        elif self.direction == "backward":
+            self.position = self.pos_offset - (self.absolute_steps - self.abs_offset)
+        else:
+            raise "set_direction wrong direction %s"%self.direction
         self.pos_pub.publish(self.position)
 
     def steps_callback(self, msg):
@@ -68,8 +75,8 @@ class MotorEncoder():
         if direction in ["forward", "backward"]:
             if self.velocity == 0:
                 self.direction = direction
-                self.steps_offset_since_last_direction_change = self.absolute_steps
-                self.last_relative_steps = 0
+                self.abs_offset = self.absolute_steps
+                self.rel_offset = self.position
             else:
                 raise "cannot change direction with velocity=%f != 0"%self.velocity
         else:
@@ -199,9 +206,7 @@ def main():
         twistToMotors = DifferentialDrive()
         twistToMotors.spin()
     except rospy.ROSInterruptException:
-        motors.motor1.setSpeed(0)
-        motors.motor2.setSpeed(0)
-        motors.disable()
+        pass
     motors.motor1.setSpeed(0)
     motors.motor2.setSpeed(0)
     motors.disable()
