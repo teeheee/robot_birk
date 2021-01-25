@@ -76,7 +76,7 @@ class MotorEncoder():
             if self.velocity == 0:
                 self.direction = direction
                 self.abs_offset = self.absolute_steps
-                self.rel_offset = self.position
+                self.pos_offset = self.position
             else:
                 raise "cannot change direction with velocity=%f != 0"%self.velocity
         else:
@@ -91,34 +91,75 @@ class MotorEncoder():
 class MotorController:
     def __init__(self, encoder, motor, name):
         self.encoder_name = name
-        self.pid = PID(0, 5, 0, setpoint=0)
         self.motor = motor
         self.motor.enable()
         self.motor.setSpeed(0)
         self.encoder = encoder
         self.max_pwm = 200
         self.encoder.set_onupdate_callback(self.on_update)
-        rospy.Subscriber('motor/velocity/'+name, Float32, self.set_velocity_callback)
-        
+
+        self.last_pwm_value = 0
+
+        self.velo_pid = PID(0, 5, 0, setpoint=0)
+        self.pos_pid = PID(2, 0.3, 0, setpoint=0)
+
+        self.velocity_goal = None
+        self.position_goal = None
+
+        rospy.Subscriber('motor/velocity_goal/'+name, Float32, self.set_velocity_callback)
+        rospy.Subscriber('motor/position_goal/'+name, Float32, self.set_position_callback)
+
+    def update_pwm_value(self, new_pwm_value):
+        ist_velo = self.encoder.get_velocitiy()
+        if self.last_pwm_value > 0 and new_pwm_value < 0 and ist_velo != 0:
+            self.motor.setSpeed(0)
+            print("stop")
+            return
+        elif self.last_pwm_value < 0 and new_pwm_value > 0 and ist_velo != 0:
+            self.motor.setSpeed(0)
+            print("stop")
+            return
+        elif self.last_pwm_value >= 0 and new_pwm_value < 0 and ist_velo == 0:
+            self.encoder.set_direction("backward")
+            print("backward")
+        elif self.last_pwm_value <= 0 and new_pwm_value > 0 and ist_velo == 0:
+            self.encoder.set_direction("forward")
+            print("forward")
+        if new_pwm_value > self.max_pwm:
+            new_pwm_value = self.max_pwm
+        if new_pwm_value < -self.max_pwm:
+            new_pwm_value = -self.max_pwm
+        self.motor.setSpeed(new_pwm_value)
+        self.last_pwm_value = new_pwm_value
 
     def on_update(self):
-        print("name: %s"%self.encoder_name)
-        ist_velo = self.encoder.get_velocitiy()
-        print("soll_velo: %s"% self.pid.setpoint)
-        print("ist_velo: %s"% ist_velo)
-        pwm_value = -int(6*self.pid.setpoint + self.pid(ist_velo))
-        print("pwm_value: %s"%pwm_value)
-        if pwm_value > self.max_pwm:
-            pwm_value = self.max_pwm
-        if pwm_value < -self.max_pwm:
-            pwm_value = -self.max_pwm
-        self.motor.setSpeed(pwm_value)
+        if self.velocity_goal is not None:
+            #ist_velo = self.encoder.get_velocitiy()
+            #pwm_value = -int(6*self.velocity_goal)
+            #self.update_pwm_value(pwm_value)
+            pass
+        if self.position_goal is not None:
+            ist_pos = self.encoder.get_position()
+            print("istpoint %d"%ist_pos)
+            print("setpoint %d"%self.position_goal)
+            self.pos_pid.setpoint = self.position_goal
+            pwm_value = int(self.pos_pid(ist_pos))
+            print("pwm_value %d"%pwm_value)
+            self.update_pwm_value(pwm_value)
 
     def set_velocity(self, velo):
-        self.pid.setpoint = velo
+        self.velocity_goal = velo
+        self.position_goal = None
+
+    def set_position(self, pos):
+        self.velocity_goal = None
+        self.position_goal = pos
 
     def set_velocity_callback(self, msg):
         self.set_velocity(msg.data)
+
+    def set_position_callback(self, msg):
+        self.set_position(msg.data)
     
 
 #############################################################
@@ -149,7 +190,7 @@ class DifferentialDrive():
         self.left_motor = MotorController(self.left_encoder, motors.motor2, "left")
         self.right_motor = MotorController(self.right_encoder, motors.motor1, "right")
 
-        self.right_motor.set_velocity(44)
+        #self.right_motor.set_velocity(44)
 
     #############################################################
     def spin(self):
