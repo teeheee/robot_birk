@@ -16,3 +16,11 @@ autonomouse indoor navigation robot platform based on an exisiting lowcost clean
 # CREATE PACKAGE
        * catkin_create_pkg
 
+# BUILD WITH DOCKER
+
+docker run --mount src="$(pwd)",target=/ws,type=bind -it ros:melodic
+
+cd ws
+apt update
+apt install ros-melodic-move-base
+catkin_make
